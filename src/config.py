@@ -15,29 +15,29 @@ from dotenv import load_dotenv
 @dataclass
 class Config:
     """Application configuration."""
-    
+
     # API Keys
     ibm_api_key: str
     gemini_api_key: str
-    
+
     # IBM Quantum settings
     ibm_backend: Optional[str] = None
     use_simulator: bool = False
-    
+
     # Comic parameters
     panels: int = 6
     characters: int = 2
-    
+
     # Random seed
     seed: Optional[int] = None
-    
+
     # Output settings
     output_dir: Path = Path("output")
-    
+
     # Runtime settings
     max_retries: int = 3
     timeout: int = 300  # seconds
-    
+
     # Debug settings
     debug: bool = False
     dry_run: bool = False
@@ -45,19 +45,20 @@ class Config:
 
 class ConfigError(Exception):
     """Configuration error."""
+
     pass
 
 
 def load_config(env_file: Optional[str] = None) -> Config:
     """
     Load configuration from environment variables.
-    
+
     Args:
         env_file: Optional path to .env file
-        
+
     Returns:
         Config object with validated settings
-        
+
     Raises:
         ConfigError: If required environment variables are missing
     """
@@ -66,7 +67,7 @@ def load_config(env_file: Optional[str] = None) -> Config:
         load_dotenv(env_file)
     else:
         load_dotenv()
-    
+
     # Required environment variables
     ibm_api_key = os.getenv("IBM_API_KEY")
     if not ibm_api_key:
@@ -74,42 +75,42 @@ def load_config(env_file: Optional[str] = None) -> Config:
             "IBM_API_KEY environment variable is required. "
             "Get your API key from: https://quantum.ibm.com/"
         )
-    
+
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if not gemini_api_key:
         raise ConfigError(
             "GEMINI_API_KEY environment variable is required. "
             "Get your API key from: https://ai.google.dev/"
         )
-    
+
     # Optional settings with defaults
     ibm_backend = os.getenv("IBM_BACKEND") or None
     use_simulator = os.getenv("USE_SIMULATOR", "false").lower() == "true"
-    
+
     # Comic parameters
     panels = int(os.getenv("PANELS", "6"))
     if panels < 1 or panels > 12:
         raise ConfigError("PANELS must be between 1 and 12")
-    
+
     characters = int(os.getenv("CHARACTERS", "2"))
     if characters < 1 or characters > 4:
         raise ConfigError("CHARACTERS must be between 1 and 4")
-    
+
     # Random seed
     seed_str = os.getenv("SEED")
     seed = int(seed_str) if seed_str else None
-    
+
     # Output directory
     output_dir = Path(os.getenv("OUTPUT_DIR", "output"))
-    
+
     # Runtime settings
     max_retries = int(os.getenv("MAX_RETRIES", "3"))
     timeout = int(os.getenv("TIMEOUT", "300"))
-    
+
     # Debug settings
     debug = os.getenv("DEBUG", "false").lower() == "true"
     dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
-    
+
     return Config(
         ibm_api_key=ibm_api_key,
         gemini_api_key=gemini_api_key,
@@ -129,10 +130,10 @@ def load_config(env_file: Optional[str] = None) -> Config:
 def validate_config(config: Config) -> None:
     """
     Validate configuration values.
-    
+
     Args:
         config: Configuration object to validate
-        
+
     Raises:
         ConfigError: If configuration is invalid
     """
@@ -144,7 +145,7 @@ def validate_config(config: Config) -> None:
             f"Configuration requires {total_qubits} qubits, "
             f"but maximum is 127. Reduce panels or characters."
         )
-    
+
     # Ensure output directory exists
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -152,10 +153,10 @@ def validate_config(config: Config) -> None:
 def get_circuit_parameters(config: Config) -> dict:
     """
     Get quantum circuit parameters from configuration.
-    
+
     Args:
         config: Configuration object
-        
+
     Returns:
         Dictionary with circuit parameters
     """
@@ -175,10 +176,10 @@ def get_circuit_parameters(config: Config) -> dict:
 def get_runtime_options(config: Config) -> dict:
     """
     Get IBM Runtime options from configuration.
-    
+
     Args:
         config: Configuration object
-        
+
     Returns:
         Dictionary with runtime options
     """
@@ -197,10 +198,10 @@ _default_config: Optional[Config] = None
 def get_config() -> Config:
     """
     Get the default configuration instance.
-    
+
     Returns:
         Default Config object
-        
+
     Raises:
         ConfigError: If configuration hasn't been initialized
     """
@@ -214,7 +215,7 @@ def get_config() -> Config:
 def set_config(config: Config) -> None:
     """
     Set the default configuration instance.
-    
+
     Args:
         config: Configuration object to set as default
     """
