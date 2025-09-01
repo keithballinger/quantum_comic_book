@@ -19,7 +19,7 @@ from src.ibm_runtime import (
     list_available_backends,
 )
 from src.prompts import decode_quantum_result
-from src.gemini_client import GeminiImageGenerator
+from src.gemini_client import GeminiClient
 from src.output_manager import OutputManager
 
 
@@ -101,8 +101,7 @@ class QuantumComicGenerator:
         narrative, prompts = decode_quantum_result(
             bitstring,
             registers,
-            character_style=self.config.character_style,
-            art_style=self.config.art_style,
+            config=self.config,
         )
 
         self.logger.info(f"Generated narrative with {len(prompts)} panels")
@@ -110,7 +109,7 @@ class QuantumComicGenerator:
 
         # Step 3: Generate images
         self.logger.info("Generating comic panel images")
-        generator = GeminiImageGenerator(self.config)
+        generator = GeminiClient(self.config)
 
         if not generator.test_connection():
             raise RuntimeError("Failed to connect to Gemini API")
@@ -194,7 +193,7 @@ class QuantumComicGenerator:
         # Test Gemini connection
         self.logger.info("Testing Gemini API connection")
         try:
-            generator = GeminiImageGenerator(self.config)
+            generator = GeminiClient(self.config)
             gemini_ok = generator.test_connection()
             if gemini_ok:
                 self.logger.info("✓ Gemini API connection successful")

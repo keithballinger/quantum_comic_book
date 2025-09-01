@@ -6,6 +6,7 @@ on IBM Quantum hardware or simulators.
 """
 
 import logging
+import time
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
 
@@ -112,10 +113,15 @@ class IBMRuntimeManager:
 
             else:
                 # Auto-select hardware backend
-                backends = self.service.backends(simulator=False, operational=True)
+                min_qubits = self.config.panels + (2 * self.config.panels * 3) + 4
+                backends = self.service.backends(
+                    simulator=False, 
+                    operational=True,
+                    filters=lambda b: b.num_qubits >= min_qubits
+                )
                 
                 if not backends:
-                    raise RuntimeError("No quantum hardware backends available")
+                    raise RuntimeError(f"No quantum hardware backends available with at least {min_qubits} qubits.")
                 
                 # Sort by queue length (pending jobs)
                 backend_status = []
@@ -128,6 +134,13 @@ class IBMRuntimeManager:
                 
                 # Sort by queue length
                 backend_status.sort(key=lambda x: x['queue'])
+
+                print("\nTop 5 available quantum backends:")
+                print("-" * 40)
+                for i, b_info in enumerate(backend_status[:5]):
+                    b = b_info['backend']
+                    print(f"  {i+1}. {b.name}: {b.num_qubits} qubits, Queue: {b_info['queue']} jobs")
+                print("-" * 40)
                 
                 # Select backend with shortest queue
                 backend = backend_status[0]['backend']
@@ -192,6 +205,24 @@ class IBMRuntimeManager:
 
                     # Run the transpiled circuit
                     job = sampler.run([transpiled_circuit])
+                    job_id = job.job_id
+                    print(f"Job submitted with ID: {job_id}")
+
+                    # Monitor job progress
+                    print("Waiting for job to complete...")
+                    while job.status() not in ['DONE', 'ERROR', 'CANCELLED']:
+                        status = job.status()
+                        queue_info = ""
+                        if hasattr(status, 'queue_position') and status.queue_position is not None:
+                            queue_info = f" (Queue position: {status.queue_position})"
+                        print(f"  Status: {status}{queue_info}", end='\r')
+                        time.sleep(10)
+                    
+                    print(f"\nJob finished with status: {job.status()}")
+
+                    if job.status() != 'DONE':
+                        raise RuntimeError(f"Job {job_id} failed with status: {job.status()}")
+
                     result = job.result()
 
                     # Extract bitstring from results
