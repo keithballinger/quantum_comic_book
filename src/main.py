@@ -6,7 +6,6 @@ quantum-driven comic strips.
 """
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -23,29 +22,7 @@ from src.gemini_client import GeminiClient
 from src.output_manager import OutputManager
 
 
-# Configure logging
-def setup_logging(verbose: bool = False):
-    """
-    Configure logging for the application.
 
-    Args:
-        verbose: Enable verbose logging
-    """
-    level = logging.DEBUG if verbose else logging.INFO
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler("quantum_comic.log"),
-        ],
-    )
-
-    # Reduce noise from external libraries
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("google").setLevel(logging.WARNING)
-    logging.getLogger("qiskit").setLevel(logging.WARNING)
 
 
 class QuantumComicGenerator:
@@ -59,7 +36,6 @@ class QuantumComicGenerator:
             config: Application configuration
         """
         self.config = config
-        self.logger = logging.getLogger(__name__)
 
     def generate_comic(
         self,
@@ -78,17 +54,20 @@ class QuantumComicGenerator:
         Returns:
             Tuple of (output directory, bitstring)
         """
-        self.logger.info("Starting quantum comic generation")
+        if self.config.verbose:
+            print("Starting quantum comic generation")
 
         # Step 1: Get quantum measurement
         if skip_quantum and test_bitstring:
-            self.logger.info(f"Using test bitstring: {test_bitstring}")
+            if self.config.verbose:
+                print(f"Using test bitstring: {test_bitstring}")
             bitstring = test_bitstring
         else:
             bitstring = self._execute_quantum_circuit()
 
         # Step 2: Decode into narrative and prompts
-        self.logger.info("Decoding quantum result into narrative")
+        if self.config.verbose:
+            print("Decoding quantum result into narrative")
         circuit_params = get_circuit_parameters(self.config)
         registers = CircuitRegisters(
             time_qubits=circuit_params["time_qubits"],
@@ -104,11 +83,12 @@ class QuantumComicGenerator:
             config=self.config,
         )
 
-        self.logger.info(f"Generated narrative with {len(prompts)} panels")
-        self.logger.info(f"Style: {narrative.style_palette}")
+        if self.config.verbose:
+            print(f"Generated narrative with {len(prompts)} panels")
+            print(f"Style: {narrative.style_palette}")
 
         # Step 3: Generate images
-        self.logger.info("Generating comic panel images")
+        print("Calling Gemini Flash to generate comic panel images...")
         generator = GeminiClient(self.config)
 
         if not generator.test_connection():
@@ -121,7 +101,7 @@ class QuantumComicGenerator:
         )
 
         # Step 4: Save output
-        self.logger.info("Saving comic strip to disk")
+        print("Building the comic book...")
         output_manager = OutputManager(self.config)
 
         if output_dir is None:
@@ -139,7 +119,8 @@ class QuantumComicGenerator:
         # Step 5: Create archive if requested
         if self.config.create_archive:
             archive_path = output_manager.export_comic_archive(comic_dir)
-            self.logger.info(f"Created archive: {archive_path}")
+            if self.config.verbose:
+                print(f"Created archive: {archive_path}")
 
         # Step 6: Cleanup old comics if needed
         if self.config.cleanup_old:
@@ -147,8 +128,9 @@ class QuantumComicGenerator:
                 keep_latest=self.config.keep_latest_comics
             )
 
-        self.logger.info(f"Comic strip saved to: {comic_dir}")
-        self.logger.info(f"View in browser: {saved_files['html']}")
+        if self.config.verbose:
+            print(f"Comic strip saved to: {comic_dir}")
+            print(f"View in browser: {saved_files['html']}")
 
         return comic_dir, bitstring
 
@@ -159,18 +141,21 @@ class QuantumComicGenerator:
         Returns:
             Measurement bitstring
         """
-        self.logger.info("Creating quantum circuit")
+        if self.config.verbose:
+            print("Creating quantum circuit")
         circuit, registers = create_quantum_circuit(self.config)
 
-        self.logger.info(f"Executing circuit with {registers.total_qubits} qubits")
+        if self.config.verbose:
+            print(f"Executing circuit with {registers.total_qubits} qubits")
         
         result = execute_quantum_circuit(
             circuit,
             self.config,
             shots=1,  # Single shot for pure quantum collapse
         )
-        self.logger.info(f"Quantum measurement: {result.bitstring}")
-        self.logger.info(f"Backend used: {result.backend_name}")
+        print(f"Quantum measurement: {result.bitstring}")
+        if self.config.verbose:
+            print(f"Backend used: {result.backend_name}")
         return result.bitstring
 
     def test_connections(self) -> bool:
@@ -180,27 +165,27 @@ class QuantumComicGenerator:
         Returns:
             True if all connections successful
         """
-        self.logger.info("Testing service connections")
+        print("Testing service connections")
 
         # Test IBM connection
-        self.logger.info("Testing IBM Quantum connection")
+        print("Testing IBM Quantum connection")
         ibm_ok = check_ibm_connection(self.config)
         if ibm_ok:
-            self.logger.info("✓ IBM Quantum connection successful")
+            print("✓ IBM Quantum connection successful")
         else:
-            self.logger.error("✗ IBM Quantum connection failed")
+            print("✗ IBM Quantum connection failed")
 
         # Test Gemini connection
-        self.logger.info("Testing Gemini API connection")
+        print("Testing Gemini API connection")
         try:
             generator = GeminiClient(self.config)
             gemini_ok = generator.test_connection()
             if gemini_ok:
-                self.logger.info("✓ Gemini API connection successful")
+                print("✓ Gemini API connection successful")
             else:
-                self.logger.error("✗ Gemini API connection failed")
+                print("✗ Gemini API connection failed")
         except Exception as e:
-            self.logger.error(f"✗ Gemini API connection failed: {e}")
+            print(f"✗ Gemini API connection failed: {e}")
             gemini_ok = False
 
         return ibm_ok and gemini_ok
@@ -357,10 +342,6 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    # Setup logging
-    setup_logging(args.verbose)
-    logger = logging.getLogger(__name__)
-
     try:
         # Load configuration
         config = load_config(env_file=args.config_file)
@@ -390,13 +371,15 @@ def main():
             config.keep_latest_comics = args.keep_latest
         if args.seed:
             config.random_seed = args.seed
+        if args.verbose:
+            config.verbose = True
 
         # Validate configuration
         validate_config(config)
 
         # Handle special commands
         if args.list_backends:
-            logger.info("Listing available quantum backends")
+            print("Listing available quantum backends")
             backends = list_available_backends(config)
 
             print("\nAvailable Quantum Backends:")
@@ -431,11 +414,14 @@ def main():
         return 0
 
     except KeyboardInterrupt:
-        logger.info("Generation cancelled by user")
+        print("\nGeneration cancelled by user")
         return 130
 
     except Exception as e:
-        logger.error(f"Error generating comic: {e}", exc_info=args.verbose)
+        print(f"\nError generating comic: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

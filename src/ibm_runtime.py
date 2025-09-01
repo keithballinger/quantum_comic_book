@@ -5,7 +5,6 @@ This module handles authentication, backend selection, and circuit execution
 on IBM Quantum hardware or simulators.
 """
 
-import logging
 import time
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
@@ -23,7 +22,7 @@ from qiskit_ibm_runtime.exceptions import IBMRuntimeError
 from src.config import Config, get_runtime_options
 
 
-logger = logging.getLogger(__name__)
+
 
 
 class RuntimeError(Exception):
@@ -71,15 +70,19 @@ class IBMRuntimeManager:
             # Connect to IBM Quantum service
             if self.config.ibm_api_key:
                 # Use API key from config
+                print("Connecting to IBM Quantum...")
                 self.service = QiskitRuntimeService(
                     channel="ibm_quantum_platform",
                     token=self.config.ibm_api_key,
                 )
-                logger.info("Connected to IBM Quantum service with API key")
+                if self.config.verbose:
+                    print("Connected to IBM Quantum service with API key")
             else:
                 # Use saved credentials
+                print("Connecting to IBM Quantum...")
                 self.service = QiskitRuntimeService()
-                logger.info("Connected to IBM Quantum service with saved credentials")
+                if self.config.verbose:
+                    print("Connected to IBM Quantum service with saved credentials")
 
         except Exception as e:
             raise RuntimeError(f"Failed to connect to IBM Quantum: {e}")
@@ -104,12 +107,13 @@ class IBMRuntimeManager:
                 if not backends:
                     raise RuntimeError("No simulator backends available")
                 backend = backends[0]
-                logger.info(f"Using simulator backend: {backend.name}")
+                if self.config.verbose:
+                    print(f"Using simulator backend: {backend.name}")
 
             elif self.options["backend"]:
                 # Use specified backend
                 backend = self.service.backend(self.options["backend"])
-                logger.info(f"Using specified backend: {self.options['backend']}")
+                print(f"Using specified backend: {self.options['backend']}")
 
             else:
                 # Auto-select hardware backend
@@ -145,7 +149,7 @@ class IBMRuntimeManager:
                 # Select backend with shortest queue
                 backend = backend_status[0]['backend']
 
-                logger.info(f"Auto-selected backend: {backend.name}")
+                print(f"Auto-selected backend: {backend.name}")
 
             self.backend = backend
             return backend
@@ -181,7 +185,8 @@ class IBMRuntimeManager:
 
         for attempt in range(retries):
             try:
-                logger.info(f"Executing circuit (attempt {attempt + 1}/{retries})")
+                if self.config.verbose:
+                    print(f"Executing circuit (attempt {attempt + 1}/{retries})")
 
                 # Configure sampler options
                 sampler_options = SamplerOptions(
@@ -201,29 +206,35 @@ class IBMRuntimeManager:
                         optimization_level=3,
                         seed_transpiler=42
                     )
-                    logger.info(f"Circuit transpiled: depth={transpiled_circuit.depth()}, gates={transpiled_circuit.size()}")
+                    if self.config.verbose:
+                        print(f"Circuit transpiled: depth={transpiled_circuit.depth()}, gates={transpiled_circuit.size()}")
 
                     # Run the transpiled circuit
                     job = sampler.run([transpiled_circuit])
-                    job_id = job.job_id
+                    job_id = job.job_id()
                     print(f"Job submitted with ID: {job_id}")
 
                     # Monitor job progress
                     print("Waiting for job to complete...")
-                    while job.status() not in ['DONE', 'ERROR', 'CANCELLED']:
-                        status = job.status()
+                    while True:
+                        retrieved_job = self.service.job(job_id)
+                        status = retrieved_job.status()
+                        if str(status) in ['DONE', 'ERROR', 'CANCELLED']:
+                            break
+                        
                         queue_info = ""
                         if hasattr(status, 'queue_position') and status.queue_position is not None:
                             queue_info = f" (Queue position: {status.queue_position})"
-                        print(f"  Status: {status}{queue_info}", end='\r')
+                        print(f"  Status: {status}{queue_info}", end='\r', flush=True)
                         time.sleep(10)
-                    
-                    print(f"\nJob finished with status: {job.status()}")
 
-                    if job.status() != 'DONE':
-                        raise RuntimeError(f"Job {job_id} failed with status: {job.status()}")
+                    final_status = str(retrieved_job.status())
+                    print(f"\nJob finished with status: {final_status}")
 
-                    result = job.result()
+                    if final_status != 'DONE':
+                        raise RuntimeError(f"Job {job_id} failed with status: {final_status}")
+
+                    result = retrieved_job.result()
 
                     # Extract bitstring from results
                     bitstring = self._extract_bitstring(result, transpiled_circuit.num_clbits)
@@ -243,23 +254,26 @@ class IBMRuntimeManager:
                         },
                     )
 
-                    logger.info(f"Circuit executed successfully on {self.backend.name}")
+                    if self.config.verbose:
+                        print(f"Circuit executed successfully on {self.backend.name}")
                     return execution_result
 
             except IBMRuntimeError as e:
                 last_error = e
-                logger.warning(f"Execution attempt {attempt + 1} failed: {e}")
+                if self.config.verbose:
+                    print(f"Execution attempt {attempt + 1} failed: {e}")
 
                 if attempt < retries - 1:
                     # Try different backend on retry
-                    if not self.options["backend"]:  # Only if not fixed backend
-                        logger.info("Selecting alternative backend for retry")
+                    if not self.options["backend"]:
+                        if self.config.verbose:
+                            print("Selecting alternative backend for retry")
                         self.backend = None
                         self.backend = self.select_backend()
 
             except Exception as e:
                 last_error = e
-                logger.error(f"Unexpected error during execution: {e}")
+                print(f"Unexpected error during execution: {e}")
                 break
 
         raise RuntimeError(
@@ -344,7 +358,8 @@ class IBMRuntimeManager:
         """Disconnect from IBM Quantum service."""
         self.service = None
         self.backend = None
-        logger.info("Disconnected from IBM Quantum service")
+        if self.config.verbose:
+            print("Disconnected from IBM Quantum service")
 
 
 def execute_quantum_circuit(
@@ -391,12 +406,14 @@ def check_ibm_connection(config: Config) -> bool:
         manager = IBMRuntimeManager(config)
         manager.connect()
         backend_info = manager.get_backend_info()
-        logger.info(f"Connection test successful. Backend: {backend_info['name']}")
+        if config.verbose:
+            print(f"Connection test successful. Backend: {backend_info['name']}")
         manager.disconnect()
         return True
 
     except Exception as e:
-        logger.error(f"Connection test failed: {e}")
+        if config.verbose:
+            print(f"Connection test failed: {e}")
         return False
 
 
