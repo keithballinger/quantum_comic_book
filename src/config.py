@@ -50,9 +50,8 @@ class Config:
     timeout: int = 300  # seconds
     execution_timeout: int = 600  # Alias for timeout
 
-    # Debug settings
-    debug: bool = False
-    dry_run: bool = False
+    # Display settings
+    verbose: bool = False
     
     def __post_init__(self):
         """Post-initialization processing."""
@@ -130,9 +129,8 @@ def load_config(env_file: Optional[str] = None) -> Config:
     max_retries = int(os.getenv("MAX_RETRIES", "3"))
     timeout = int(os.getenv("TIMEOUT", "300"))
 
-    # Debug settings
-    debug = os.getenv("DEBUG", "false").lower() == "true"
-    dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
+    # Display settings
+    verbose = os.getenv("VERBOSE", "false").lower() == "true"
 
     return Config(
         ibm_api_key=ibm_api_key,
@@ -145,8 +143,7 @@ def load_config(env_file: Optional[str] = None) -> Config:
         output_dir=output_dir,
         max_retries=max_retries,
         timeout=timeout,
-        debug=debug,
-        dry_run=dry_run,
+        verbose=verbose,
     )
 
 

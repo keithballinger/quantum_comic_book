@@ -7,7 +7,6 @@ including image-to-image conditioning for visual consistency.
 
 import base64
 import io
-import logging
 import mimetypes
 import time
 from dataclasses import dataclass
@@ -22,7 +21,7 @@ from src.config import Config
 from src.narrative import ComicNarrative, PanelData
 
 
-logger = logging.getLogger(__name__)
+
 
 
 class GeminiError(Exception):
@@ -65,7 +64,6 @@ class GeneratedPanel:
         file_path.write_bytes(self.image_data)
         self.file_path = file_path
         
-        logger.info(f"Saved panel {self.panel_index} to {file_path}")
         return file_path
     
     def to_pil_image(self) -> Image.Image:
@@ -155,7 +153,8 @@ class GeminiClient:
         """Connect to Gemini API."""
         try:
             self.client = genai.Client(api_key=self.config.gemini_api_key)
-            logger.info("Connected to Gemini API")
+            if self.config.verbose:
+                print("Connected to Gemini API")
         except Exception as e:
             raise GeminiError(f"Failed to connect to Gemini: {e}")
 
@@ -173,18 +172,21 @@ class GeminiClient:
         last_error = None
         for attempt in range(max_retries):
             try:
-                logger.info(f"Generating narrative (attempt {attempt + 1})")
+                if self.config.verbose:
+                    print(f"Generating narrative (attempt {attempt + 1})")
                 response = self.client.models.generate_content(
                     model=self.TEXT_MODEL_NAME,
                     contents=[types.Content(role="user", parts=[types.Part.from_text(text=narrative_prompt)])],
                 )
                 if response and response.text:
-                    logger.info("Successfully generated narrative.")
+                    if self.config.verbose:
+                        print("Successfully generated narrative.")
                     return response.text
                 raise GeminiError("Empty response from narrative generation.")
             except Exception as e:
                 last_error = e
-                logger.warning(f"Narrative generation attempt {attempt + 1} failed: {e}")
+                if self.config.verbose:
+                    print(f"Narrative generation attempt {attempt + 1} failed: {e}")
                 time.sleep(2 ** attempt)
         
         raise GeminiError(f"Failed to generate narrative after {max_retries} attempts: {last_error}")
@@ -215,7 +217,8 @@ class GeminiClient:
         
         for attempt in range(max_retries):
             try:
-                logger.info(f"Generating panel {panel_index} (attempt {attempt + 1})")
+                if self.config.verbose:
+                    print(f"Generating panel {panel_index} (attempt {attempt + 1})")
                 
                 # Build prompt parts
                 parts = []
@@ -281,19 +284,22 @@ class GeminiClient:
                         }
                     )
                     
-                    logger.info(f"Successfully generated panel {panel_index}")
+                    if self.config.verbose:
+                        print(f"Successfully generated panel {panel_index}")
                     return panel
                 
                 raise GeminiError(f"No image in response for panel {panel_index}")
                 
             except Exception as e:
                 last_error = e
-                logger.warning(f"Generation attempt {attempt + 1} failed: {e}")
+                if self.config.verbose:
+                    print(f"Generation attempt {attempt + 1} failed: {e}")
                 
                 if attempt < max_retries - 1:
                     # Wait before retry with exponential backoff
                     wait_time = 2 ** attempt
-                    logger.info(f"Waiting {wait_time} seconds before retry")
+                    if self.config.verbose:
+                        print(f"Waiting {wait_time} seconds before retry")
                     time.sleep(wait_time)
         
         raise GeminiError(
@@ -362,7 +368,8 @@ class GeminiClient:
                 comic.title_card = title_card
                 
             except Exception as e:
-                logger.warning(f"Failed to generate title card: {e}")
+                if self.config.verbose:
+                    print(f"Failed to generate title card: {e}")
         
         return comic
     
@@ -385,7 +392,8 @@ class GeminiClient:
             return response is not None
             
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
+            if self.config.verbose:
+                print(f"Connection test failed: {e}")
             return False
 
 
@@ -425,7 +433,6 @@ def create_comic_strip_from_bitstring(
     # Save all panels
     comic.save_all(output_dir)
     
-    logger.info(f"Comic strip saved to {output_dir}")
     return comic, output_dir
 
 
@@ -472,5 +479,4 @@ def create_combined_strip_image(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     combined.save(output_path, quality=95)
     
-    logger.info(f"Created combined strip at {output_path}")
     return output_path
