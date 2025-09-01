@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import List, Dict, Any
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
 
 @dataclass
 class PanelData:
@@ -36,6 +36,7 @@ class ComicNarrative:
     character_bio: str
     base_style: str
     bitstring: str
+    quantum_constraints: Optional[Dict[str, Any]] = field(default=None)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -46,4 +47,5 @@ class ComicNarrative:
             "character_bio": self.character_bio,
             "base_style": self.base_style,
             "bitstring": self.bitstring,
+            "quantum_constraints": self.quantum_constraints,
         }

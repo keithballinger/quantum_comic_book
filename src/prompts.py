@@ -376,6 +376,20 @@ Your task is to take a raw, quantum-generated narrative structure and flesh it o
 
         # Style palette
         prompt_parts.append(f"Use {self.narrative.style_palette}.")
+        
+        # Add quantum motif if constraints are available
+        if hasattr(self.narrative, 'quantum_constraints') and self.narrative.quantum_constraints:
+            # Use quantum signature to deterministically select a visual motif
+            from src.quantum_constraints import hash_phrase
+            motif_vocab = [
+                "red umbrella", "paper crane", "broken key", "train ticket",
+                "old compass", "glass marble", "pocket watch", "torn photograph"
+            ]
+            # Extract time and style bits from bitstring for motif selection
+            time_bits = self.narrative.bitstring[:6]  # First 6 bits for time
+            style_bits = self.narrative.bitstring[-4:]  # Last 4 bits for style
+            prop = hash_phrase(time_bits + style_bits + "prop", motif_vocab)
+            prompt_parts.append(f"Include a subtle recurring visual motif: {prop}.")
 
         return " ".join(prompt_parts)
 

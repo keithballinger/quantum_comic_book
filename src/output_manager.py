@@ -371,7 +371,36 @@ class OutputManager:
             <div class="metadata-item">
                 <span class="metadata-label">Characters:</span> {comic.narrative.character_bio}
             </div>
+"""
+        
+        # Add quantum constraints if available
+        if hasattr(comic.narrative, 'quantum_constraints') and comic.narrative.quantum_constraints:
+            constraints = comic.narrative.quantum_constraints
+            html_content += f"""
+            <h2>Quantum Signature</h2>
             
+            <div class="metadata-item">
+                <span class="metadata-label">Backend:</span> {constraints.get('backend', 'unknown')}
+            </div>
+            
+            <div class="metadata-item">
+                <span class="metadata-label">Tone:</span> {constraints.get('tone', 'contemporary')}
+            </div>
+            
+            <div class="metadata-item">
+                <span class="metadata-label">Style Parity (σS):</span> {constraints.get('style_parity', 0)}
+            </div>
+            
+            <div class="metadata-item">
+                <span class="metadata-label">Rhetorical Bias:</span> {constraints.get('rhetorical_bias', 'anaphora')}
+            </div>
+            
+            <div class="metadata-item">
+                <span class="metadata-label">Recurring Phrase:</span> "{constraints.get('recurring_phrase', '')}"
+            </div>
+"""
+        
+        html_content += """
             <h2>Panel Details</h2>
             <div class="panel-details">
 """

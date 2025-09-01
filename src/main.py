@@ -8,7 +8,7 @@ quantum-driven comic strips.
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
 from src.config import Config, load_config, validate_config, get_circuit_parameters
 from src.quantum_circuit import create_quantum_circuit, CircuitRegisters
@@ -20,6 +20,9 @@ from src.ibm_runtime import (
 from src.prompts import decode_quantum_result
 from src.gemini_client import GeminiClient
 from src.output_manager import OutputManager
+from src.quantum_constraints import RegisterShape, build_constraints
+from src.gemini_text import generate_narrative
+from src.chsh_weirdness import chsh_score, weirdness_from_chsh
 
 
 
@@ -42,6 +45,8 @@ class QuantumComicGenerator:
         output_dir: Optional[Path] = None,
         skip_quantum: bool = False,
         test_bitstring: Optional[str] = None,
+        backend_name: Optional[str] = None,
+        transpiled_depth: Optional[int] = None,
     ) -> Tuple[Path, str]:
         """
         Generate a complete quantum comic strip.
@@ -62,12 +67,17 @@ class QuantumComicGenerator:
             if self.config.verbose:
                 print(f"Using test bitstring: {test_bitstring}")
             bitstring = test_bitstring
+            backend_name = backend_name or "test_backend"
+            transpiled_depth = transpiled_depth or 0
         else:
-            bitstring = self._execute_quantum_circuit()
+            result = self._execute_quantum_circuit_with_details()
+            bitstring = result['bitstring']
+            backend_name = result['backend_name']
+            transpiled_depth = result['transpiled_depth']
 
-        # Step 2: Decode into narrative and prompts
+        # Step 2: Decode into panels and build quantum constraints
         if self.config.verbose:
-            print("Decoding quantum result into narrative")
+            print("Decoding quantum result and building narrative constraints")
         circuit_params = get_circuit_parameters(self.config)
         registers = CircuitRegisters(
             time_qubits=circuit_params["time_qubits"],
@@ -77,11 +87,62 @@ class QuantumComicGenerator:
             style_qubits=circuit_params["style_qubits"],
             total_qubits=circuit_params["total_qubits"],
         )
+        
+        # First decode panels from quantum result (original method)
         narrative, prompts = decode_quantum_result(
             bitstring,
             registers,
             config=self.config,
         )
+        
+        # Extract panels data from narrative
+        panels_data = [
+            {
+                'panel_index': panel.panel_index,
+                'setting': panel.setting,
+                'camera': panel.camera,
+                'emotion': panel.emotion,
+                'action': panel.action
+            }
+            for panel in narrative.panels
+        ]
+        
+        # Build quantum constraints
+        shapes = RegisterShape(
+            Tn=circuit_params["time_qubits"],
+            An=circuit_params["action_qubits"],
+            En=circuit_params["emotion_qubits"],
+            Cn=circuit_params["camera_qubits"],
+            Sn=circuit_params["style_qubits"]
+        )
+        
+        constraints = build_constraints(
+            bitstring=bitstring,
+            shapes=shapes,
+            backend_name=backend_name,
+            transpiled_depth=transpiled_depth,
+            panels_data=panels_data
+        )
+        
+        if self.config.verbose:
+            print(f"Quantum constraints: tone={constraints['tone']}, recurring phrase='{constraints['recurring_phrase']}'")
+        
+        # Generate constrained narrative using Gemini Flash
+        title = narrative.title if narrative.title else "Quantum Entangled"
+        palette = narrative.style_palette
+        character_bio = narrative.character_bio
+        
+        try:
+            script = generate_narrative(self.config, title, palette, character_bio, panels_data, constraints)
+            # Update narrative with the constrained script
+            narrative.title = script.get('title', narrative.title)
+            narrative.quantum_constraints = constraints  # Store for later display
+            if self.config.verbose:
+                print(f"Generated constrained narrative: {narrative.title}")
+        except Exception as e:
+            if self.config.verbose:
+                print(f"Warning: Could not apply quantum constraints: {e}")
+            # Continue with original narrative if constraints fail
 
         if self.config.verbose:
             print(f"Generated narrative with {len(prompts)} panels")
@@ -141,6 +202,16 @@ class QuantumComicGenerator:
         Returns:
             Measurement bitstring
         """
+        result = self._execute_quantum_circuit_with_details()
+        return result['bitstring']
+    
+    def _execute_quantum_circuit_with_details(self) -> Dict[str, Any]:
+        """
+        Execute quantum circuit and get measurement with details.
+
+        Returns:
+            Dict with bitstring, backend_name, and transpiled_depth
+        """
         if self.config.verbose:
             print("Creating quantum circuit")
         circuit, registers = create_quantum_circuit(self.config)
@@ -156,7 +227,15 @@ class QuantumComicGenerator:
         print(f"Quantum measurement: {result.bitstring}")
         if self.config.verbose:
             print(f"Backend used: {result.backend_name}")
-        return result.bitstring
+        
+        # Try to get transpiled depth if available
+        transpiled_depth = getattr(result, 'transpiled_depth', 0)
+        
+        return {
+            'bitstring': result.bitstring,
+            'backend_name': result.backend_name,
+            'transpiled_depth': transpiled_depth
+        }
 
     def test_connections(self) -> bool:
         """
