@@ -67,12 +67,10 @@ class IBMRuntimeManager:
             RuntimeError: If connection fails
         """
         try:
-            # Initialize service with API key
-            self.service = QiskitRuntimeService(
-                channel="ibm_quantum",
-                token=self.config.ibm_api_key,
-            )
-            logger.info("Connected to IBM Quantum service")
+            # Connect to IBM Quantum service
+            # Always use saved credentials (no channel/token needed)
+            self.service = QiskitRuntimeService()
+            logger.info("Connected to IBM Quantum service with saved credentials")
 
         except Exception as e:
             raise RuntimeError(f"Failed to connect to IBM Quantum: {e}")
@@ -93,8 +91,11 @@ class IBMRuntimeManager:
         try:
             if self.options["use_simulator"]:
                 # Use simulator
-                backend = self.service.backend("ibmq_qasm_simulator")
-                logger.info("Using simulator backend")
+                backends = self.service.backends(simulator=True, operational=True)
+                if not backends:
+                    raise RuntimeError("No simulator backends available")
+                backend = backends[0]
+                logger.info(f"Using simulator backend: {backend.name}")
 
             elif self.options["backend"]:
                 # Use specified backend
@@ -102,26 +103,26 @@ class IBMRuntimeManager:
                 logger.info(f"Using specified backend: {self.options['backend']}")
 
             else:
-                # Auto-select least busy backend
-                backend = self.service.least_busy(
-                    operational=True,
-                    simulator=False,
-                    min_num_qubits=self.config.panels
-                    + (2 * self.config.panels * 3)
-                    + 4,
-                )
-                if not backend:
-                    # Fallback to any available backend
-                    backends = self.service.backends(
-                        operational=True,
-                        simulator=False,
-                        min_num_qubits=self.config.panels
-                        + (2 * self.config.panels * 3)
-                        + 4,
-                    )
-                    if not backends:
-                        raise RuntimeError("No suitable quantum backends available")
-                    backend = backends[0]
+                # Auto-select hardware backend
+                backends = self.service.backends(simulator=False, operational=True)
+                
+                if not backends:
+                    raise RuntimeError("No quantum hardware backends available")
+                
+                # Sort by queue length (pending jobs)
+                backend_status = []
+                for b in backends:
+                    status = b.status()
+                    backend_status.append({
+                        'backend': b,
+                        'queue': status.pending_jobs if hasattr(status, 'pending_jobs') else 0
+                    })
+                
+                # Sort by queue length
+                backend_status.sort(key=lambda x: x['queue'])
+                
+                # Select backend with shortest queue
+                backend = backend_status[0]['backend']
 
                 logger.info(f"Auto-selected backend: {backend.name}")
 
@@ -167,15 +168,26 @@ class IBMRuntimeManager:
                 )
 
                 # Create session and execute
-                with Session(service=self.service, backend=self.backend) as session:
-                    sampler = Sampler(session=session, options=sampler_options)
+                with Session(backend=self.backend) as session:
+                    # Create sampler with the session
+                    sampler = Sampler(mode=session, options=sampler_options)
+                    
+                    # Transpile circuit for the backend
+                    from qiskit import transpile
+                    transpiled_circuit = transpile(
+                        circuit,
+                        self.backend,
+                        optimization_level=3,
+                        seed_transpiler=42
+                    )
+                    logger.info(f"Circuit transpiled: depth={transpiled_circuit.depth()}, gates={transpiled_circuit.size()}")
 
-                    # Run the circuit
-                    job = sampler.run([circuit])
+                    # Run the transpiled circuit
+                    job = sampler.run([transpiled_circuit])
                     result = job.result()
 
                     # Extract bitstring from results
-                    bitstring = self._extract_bitstring(result, circuit.num_clbits)
+                    bitstring = self._extract_bitstring(result, transpiled_circuit.num_clbits)
 
                     # Create execution result
                     execution_result = ExecutionResult(
@@ -183,9 +195,7 @@ class IBMRuntimeManager:
                         backend_name=self.backend.name,
                         job_id=getattr(job, "job_id", None),
                         shots=shots,
-                        quasi_probabilities=(
-                            result.quasi_dists[0] if result.quasi_dists else None
-                        ),
+                        quasi_probabilities=None,  # Removed quasi_dists which doesn't exist in v2
                         metadata={
                             "backend_version": getattr(
                                 self.backend, "version", "unknown"
@@ -228,25 +238,50 @@ class IBMRuntimeManager:
         Returns:
             Bitstring as string
         """
-        # Get quasi-probability distribution
-        if not result.quasi_dists or not result.quasi_dists[0]:
-            raise RuntimeError("No results returned from quantum execution")
-
-        dist = result.quasi_dists[0]
-
-        # For single shot, take highest probability outcome
-        # (In practice with 1 shot, there should be only one outcome)
-        if len(dist) == 1:
-            bit_int = list(dist.keys())[0]
+        # Get measurement data from PrimitiveResult
+        pub_result = result[0]
+        data = pub_result.data
+        
+        # Extract counts - try different methods based on backend
+        counts = None
+        
+        # Try method 1: meas attribute
+        if hasattr(data, 'meas'):
+            counts = data.meas.get_counts()
+        # Try method 2: check for classical register by name
+        elif hasattr(data, 'c'):
+            counts = data.c.get_counts()
+        # Try method 3: data might have get_counts
+        elif hasattr(data, 'get_counts'):
+            counts = data.get_counts()
+        # Try method 4: Look for any BitArray attribute
         else:
-            # Take maximum probability outcome
-            bit_int = max(dist, key=dist.get)
-
-        # Convert to bitstring
-        bitstring = format(bit_int, f"0{num_bits}b")
-
-        # Reverse for consistent ordering (Qiskit uses little-endian)
-        return bitstring[::-1]
+            # Find the measurement data - it's the first BitArray attribute
+            for attr_name in dir(data):
+                if not attr_name.startswith('_'):
+                    attr = getattr(data, attr_name)
+                    if hasattr(attr, 'get_counts'):
+                        counts = attr.get_counts()
+                        break
+        
+        if counts is None:
+            raise RuntimeError(f"Could not extract counts from result. Data type: {type(data)}, attributes: {[a for a in dir(data) if not a.startswith('_')]}")
+        
+        # For single shot, there should be only one outcome
+        # Otherwise take the most frequent
+        if len(counts) == 1:
+            bitstring = list(counts.keys())[0]
+        else:
+            # Take maximum count outcome
+            bitstring = max(counts, key=counts.get)
+        
+        # Ensure correct length (pad with zeros if needed)
+        if len(bitstring) < num_bits:
+            bitstring = '0' * (num_bits - len(bitstring)) + bitstring
+        elif len(bitstring) > num_bits:
+            bitstring = bitstring[:num_bits]
+        
+        return bitstring
 
     def get_backend_info(self) -> Dict[str, Any]:
         """

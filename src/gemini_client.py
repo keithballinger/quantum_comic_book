@@ -137,7 +137,7 @@ class ComicStrip:
 class GeminiImageGenerator:
     """Generates comic panel images using Gemini API."""
     
-    MODEL_NAME = "gemini-2.0-flash-exp"
+    MODEL_NAME = "gemini-2.5-flash-image-preview"
     
     def __init__(self, config: Config):
         """

@@ -161,23 +161,17 @@ class QuantumComicGenerator:
             Measurement bitstring
         """
         self.logger.info("Creating quantum circuit")
-        circuit_params = get_circuit_parameters(self.config)
-        circuit = create_quantum_circuit(
-            panels=self.config.panels,
-            characters=self.config.characters,
-            seed=self.config.random_seed,
-        )
+        circuit, registers = create_quantum_circuit(self.config)
 
-        self.logger.info(f"Executing circuit with {circuit_params['total_qubits']} qubits")
+        self.logger.info(f"Executing circuit with {registers.total_qubits} qubits")
+        
         result = execute_quantum_circuit(
             circuit,
             self.config,
             shots=1,  # Single shot for pure quantum collapse
         )
-
         self.logger.info(f"Quantum measurement: {result.bitstring}")
         self.logger.info(f"Backend used: {result.backend_name}")
-
         return result.bitstring
 
     def test_connections(self) -> bool:
