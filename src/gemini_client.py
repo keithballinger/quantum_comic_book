@@ -210,37 +210,48 @@ class GeminiImageGenerator:
                 
                 # Configure generation
                 generate_config = types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
+                    response_modalities=["IMAGE", "TEXT"],
                     temperature=0.8,  # Some creativity but not too wild
                 )
                 
-                # Generate image
-                response = self.client.models.generate_content(
+                # Generate image using streaming
+                image_data = None
+                mime_type = "image/jpeg"
+                
+                for chunk in self.client.models.generate_content_stream(
                     model=self.MODEL_NAME,
                     contents=[types.Content(role="user", parts=parts)],
                     config=generate_config,
-                )
-                
-                # Extract image from response
-                if response.candidates and response.candidates[0].content.parts:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
+                ):
+                    if (chunk.candidates is None or 
+                        chunk.candidates[0].content is None or 
+                        chunk.candidates[0].content.parts is None):
+                        continue
+                    
+                    # Check for image data in the response
+                    for part in chunk.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
                             image_data = part.inline_data.data
                             mime_type = part.inline_data.mime_type or "image/jpeg"
-                            
-                            panel = GeneratedPanel(
-                                panel_index=panel_index,
-                                image_data=image_data,
-                                mime_type=mime_type,
-                                prompt=prompt,
-                                metadata={
-                                    "attempt": attempt + 1,
-                                    "conditioned": previous_image is not None,
-                                }
-                            )
-                            
-                            logger.info(f"Successfully generated panel {panel_index}")
-                            return panel
+                            break
+                    
+                    if image_data:
+                        break
+                
+                if image_data:
+                    panel = GeneratedPanel(
+                        panel_index=panel_index,
+                        image_data=image_data,
+                        mime_type=mime_type,
+                        prompt=prompt,
+                        metadata={
+                            "attempt": attempt + 1,
+                            "conditioned": previous_image is not None,
+                        }
+                    )
+                    
+                    logger.info(f"Successfully generated panel {panel_index}")
+                    return panel
                 
                 raise GeminiError(f"No image in response for panel {panel_index}")
                 

@@ -28,19 +28,42 @@ class Config:
     panels: int = 6
     characters: int = 2
 
+    # Style settings
+    character_style: str = "default"
+    art_style: str = "comic"
+
+    # Generation settings
+    generate_title: bool = True
+    create_archive: bool = False
+    
     # Random seed
     seed: Optional[int] = None
+    random_seed: Optional[int] = None  # Alias for compatibility
 
     # Output settings
     output_dir: Path = Path("output")
+    cleanup_old: bool = False
+    keep_latest_comics: int = 10
 
     # Runtime settings
     max_retries: int = 3
     timeout: int = 300  # seconds
+    execution_timeout: int = 600  # Alias for timeout
 
     # Debug settings
     debug: bool = False
     dry_run: bool = False
+    
+    def __post_init__(self):
+        """Post-initialization processing."""
+        # Sync seed values
+        if self.seed is not None and self.random_seed is None:
+            self.random_seed = self.seed
+        elif self.random_seed is not None and self.seed is None:
+            self.seed = self.random_seed
+        # Sync timeout values
+        if self.execution_timeout != self.timeout:
+            self.execution_timeout = self.timeout
 
 
 class ConfigError(Exception):
