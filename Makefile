@@ -62,6 +62,10 @@ build: check lint test
 run:
 	python -m src.main
 
+# Run the main application with a small number of panels
+run_small:
+	python -m src.main --panels 2
+
 # Run all checks
 all: format lint test
 	@echo "All checks passed!"

@@ -36,7 +36,7 @@ cd quantum-comic-book
 2. Create and activate virtual environment:
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
 3. Install dependencies:
