@@ -19,7 +19,7 @@ from google import genai
 from google.genai import types
 
 from src.config import Config
-from src.prompts import ComicNarrative, PanelData
+from src.narrative import ComicNarrative, PanelData
 
 
 logger = logging.getLogger(__name__)
@@ -134,10 +134,11 @@ class ComicStrip:
                 f.write(f"  Focus: Character {panel_data.character_focus + 1}\n\n")
 
 
-class GeminiImageGenerator:
-    """Generates comic panel images using Gemini API."""
+class GeminiClient:
+    """Client for Gemini API for text and image generation."""
     
-    MODEL_NAME = "gemini-2.5-flash-image-preview"
+    TEXT_MODEL_NAME = "gemini-2.5-flash"
+    IMAGE_MODEL_NAME = "gemini-2.5-flash-image-preview"
     
     def __init__(self, config: Config):
         """
@@ -157,6 +158,36 @@ class GeminiImageGenerator:
             logger.info("Connected to Gemini API")
         except Exception as e:
             raise GeminiError(f"Failed to connect to Gemini: {e}")
+
+    def generate_narrative(self, narrative_prompt: str, max_retries: int = 3) -> str:
+        """
+        Generate a structured narrative using Gemini text model.
+
+        Args:
+            narrative_prompt: The prompt to generate the narrative from.
+            max_retries: Maximum number of retries.
+
+        Returns:
+            A JSON string representing the comic narrative.
+        """
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Generating narrative (attempt {attempt + 1})")
+                response = self.client.models.generate_content(
+                    model=self.TEXT_MODEL_NAME,
+                    contents=[types.Content(role="user", parts=[types.Part.from_text(text=narrative_prompt)])],
+                )
+                if response and response.text:
+                    logger.info("Successfully generated narrative.")
+                    return response.text
+                raise GeminiError("Empty response from narrative generation.")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Narrative generation attempt {attempt + 1} failed: {e}")
+                time.sleep(2 ** attempt)
+        
+        raise GeminiError(f"Failed to generate narrative after {max_retries} attempts: {last_error}")
     
     def generate_panel(
         self,
@@ -219,7 +250,7 @@ class GeminiImageGenerator:
                 mime_type = "image/jpeg"
                 
                 for chunk in self.client.models.generate_content_stream(
-                    model=self.MODEL_NAME,
+                    model=self.IMAGE_MODEL_NAME,
                     contents=[types.Content(role="user", parts=parts)],
                     config=generate_config,
                 ):
@@ -345,7 +376,7 @@ class GeminiImageGenerator:
         try:
             # Try a simple text generation to test API
             response = self.client.models.generate_content(
-                model=self.MODEL_NAME,
+                model=self.IMAGE_MODEL_NAME,
                 contents=[types.Content(
                     role="user",
                     parts=[types.Part.from_text(text="Hello, testing connection")]
@@ -380,10 +411,10 @@ def create_comic_strip_from_bitstring(
     from datetime import datetime
     
     # Decode quantum result into narrative and prompts
-    narrative, prompts = decode_quantum_result(bitstring, registers)
+    narrative, prompts = decode_quantum_result(bitstring, registers, config)
     
     # Generate images
-    generator = GeminiImageGenerator(config)
+    generator = GeminiClient(config)
     comic = generator.generate_comic_strip(prompts, narrative)
     
     # Determine output directory

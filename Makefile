@@ -14,6 +14,11 @@ help:
 	@echo "  check     - Check code formatting without changing files"
 	@echo "  all       - Run format, lint, and test"
 
+# Create a virtual environment and activate it
+venv:
+	python3 -m venv venv
+	source venv/bin/activate
+
 # Install dependencies
 install:
 	python -m pip install --upgrade pip
