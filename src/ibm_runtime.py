@@ -68,9 +68,17 @@ class IBMRuntimeManager:
         """
         try:
             # Connect to IBM Quantum service
-            # Always use saved credentials (no channel/token needed)
-            self.service = QiskitRuntimeService()
-            logger.info("Connected to IBM Quantum service with saved credentials")
+            if self.config.ibm_api_key:
+                # Use API key from config
+                self.service = QiskitRuntimeService(
+                    channel="ibm_quantum_platform",
+                    token=self.config.ibm_api_key,
+                )
+                logger.info("Connected to IBM Quantum service with API key")
+            else:
+                # Use saved credentials
+                self.service = QiskitRuntimeService()
+                logger.info("Connected to IBM Quantum service with saved credentials")
 
         except Exception as e:
             raise RuntimeError(f"Failed to connect to IBM Quantum: {e}")
